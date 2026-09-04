@@ -1,6 +1,27 @@
-﻿target/
+# Build output and logs
+target/
+*.log
+
+# IDE files
 .idea/
 .vscode/
 *.iml
 .DS_Store
-*.log
+/shelf/
+/workspace.xml
+/queries/
+/dataSources/
+/dataSources.local.xml
+/httpRequests/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+
+# Local runtime output
+*.pid
+*.tmp

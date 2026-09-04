@@ -39,10 +39,16 @@ public class User implements UserDetails {
 
     private Instant emailVerificationTokenExpiresAt;
 
+    private Integer emailVerificationAttempts = 0;
+
     @Column(length = 512)
     private String passwordResetToken;
 
     private Instant passwordResetTokenExpiresAt;
+
+    private Integer passwordResetAttempts = 0;
+
+    private Instant passwordResetRequestedAt;
 
     @Column(length = 512)
     private String refreshTokenHash;
@@ -114,6 +120,14 @@ public class User implements UserDetails {
         this.emailVerificationTokenExpiresAt = emailVerificationTokenExpiresAt;
     }
 
+    public int getEmailVerificationAttempts() {
+        return emailVerificationAttempts == null ? 0 : emailVerificationAttempts;
+    }
+
+    public void setEmailVerificationAttempts(int emailVerificationAttempts) {
+        this.emailVerificationAttempts = emailVerificationAttempts;
+    }
+
     public String getPasswordResetToken() {
         return passwordResetToken;
     }
@@ -128,6 +142,22 @@ public class User implements UserDetails {
 
     public void setPasswordResetTokenExpiresAt(Instant passwordResetTokenExpiresAt) {
         this.passwordResetTokenExpiresAt = passwordResetTokenExpiresAt;
+    }
+
+    public int getPasswordResetAttempts() {
+        return passwordResetAttempts == null ? 0 : passwordResetAttempts;
+    }
+
+    public void setPasswordResetAttempts(int passwordResetAttempts) {
+        this.passwordResetAttempts = passwordResetAttempts;
+    }
+
+    public Instant getPasswordResetRequestedAt() {
+        return passwordResetRequestedAt;
+    }
+
+    public void setPasswordResetRequestedAt(Instant passwordResetRequestedAt) {
+        this.passwordResetRequestedAt = passwordResetRequestedAt;
     }
 
     public String getRefreshTokenHash() {

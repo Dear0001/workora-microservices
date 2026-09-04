@@ -18,6 +18,24 @@ user profile.
 
 ## Running
 
+For local Keycloak authentication, start Keycloak from the repository root:
+
+```bash
+docker compose up -d keycloak
+```
+
+Keycloak is available at `http://localhost:8180`. The imported realm is
+`workora`, with public client `workora-api`. The administrator login is
+`admin` / `admin` for local development only. Obtain a user token from:
+
+```text
+POST http://localhost:8180/realms/workora/protocol/openid-connect/token
+```
+
+Use the returned access token as `Authorization: Bearer <token>` when calling
+protected APIs through the gateway. The identity service validates the token
+issuer configured by `KEYCLOAK_ISSUER_URI`.
+
 Start the identity database from the repository root:
 
 ```bash
@@ -198,6 +216,11 @@ through environment variables and never commit it:
 $env:MAIL_USERNAME="your-gmail-address@gmail.com"
 $env:MAIL_PASSWORD="your-16-character-app-password"
 ```
+
+Set these variables in the same PowerShell window before starting Maven.
+Otherwise the mail password is empty and Spring reports
+`AuthenticationFailedException: no password specified`; registration and
+password-reset emails cannot be delivered.
 
 The default SMTP host is `smtp.gmail.com` on port `587` with STARTTLS.
 Because the app password was shared outside the application configuration,

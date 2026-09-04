@@ -7,6 +7,12 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: identity-swagger-ui
+          uri: http://localhost:8101
+          predicates:
+            - Path=/identify/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: identity-service
           uri: http://localhost:8101
           predicates:
@@ -25,6 +31,12 @@ spring:
             - Path=/organization/**
           filters:
             - RewritePath=/organization/(?<segment>.*), /${segment}
+        - id: organization-swagger-ui
+          uri: http://localhost:8102
+          predicates:
+            - Path=/organization/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
 
         - id: organization
           uri: http://localhost:8102
@@ -38,6 +50,12 @@ spring:
             - Path=/project/**
           filters:
             - RewritePath=/project/(?<segment>.*), /${segment}
+        - id: project-swagger-ui
+          uri: http://localhost:8103
+          predicates:
+            - Path=/project/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: project
           uri: http://localhost:8103
           predicates:
@@ -50,6 +68,12 @@ spring:
             - Path=/work/**
           filters:
             - RewritePath=/work/(?<segment>.*), /${segment}
+        - id: work-swagger-ui
+          uri: http://localhost:8104
+          predicates:
+            - Path=/work/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: work
           uri: http://localhost:8104
           predicates:
@@ -62,6 +86,12 @@ spring:
             - Path=/bug/**
           filters:
             - RewritePath=/bug/(?<segment>.*), /${segment}
+        - id: bug-swagger-ui
+          uri: http://localhost:8105
+          predicates:
+            - Path=/bug/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: bug
           uri: http://localhost:8105
           predicates:
@@ -74,6 +104,12 @@ spring:
             - Path=/recruitment/**
           filters:
             - RewritePath=/recruitment/(?<segment>.*), /${segment}
+        - id: recruitment-swagger-ui
+          uri: http://localhost:8106
+          predicates:
+            - Path=/recruitment/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: recruitment
           uri: http://localhost:8106
           predicates:
@@ -86,6 +122,12 @@ spring:
             - Path=/notification/**
           filters:
             - RewritePath=/notification/(?<segment>.*), /${segment}
+        - id: notification-swagger-ui
+          uri: http://localhost:8107
+          predicates:
+            - Path=/notification/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: notification
           uri: http://localhost:8107
           predicates:
@@ -98,6 +140,12 @@ spring:
             - Path=/payment/**
           filters:
             - RewritePath=/payment/(?<segment>.*), /${segment}
+        - id: payment-swagger-ui
+          uri: http://localhost:8108
+          predicates:
+            - Path=/payment/swagger-ui.html
+          filters:
+            - SetPath=/swagger-ui/index.html
         - id: payment
           uri: http://localhost:8108
           predicates:

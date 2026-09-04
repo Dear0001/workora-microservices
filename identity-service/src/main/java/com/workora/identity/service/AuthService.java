@@ -8,6 +8,8 @@ import com.workora.identity.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.time.Duration;
@@ -16,6 +18,10 @@ import java.security.SecureRandom;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+    private static final int MAX_OTP_ATTEMPTS = 5;
+    private static final Duration RESET_REQUEST_COOLDOWN = Duration.ofMinutes(1);
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -41,6 +47,7 @@ public class AuthService {
         String verificationToken = generateOtp();
         user.setEmailVerificationToken(passwordEncoder.encode(verificationToken));
         user.setEmailVerificationTokenExpiresAt(Instant.now().plus(Duration.ofMinutes(10)));
+        user.setEmailVerificationAttempts(0);
         user.setEmailVerified(false);
         userRepository.save(user);
         emailService.sendVerificationOtp(user.getEmail(), verificationToken);
@@ -96,15 +103,22 @@ public class AuthService {
     public String verifyEmail(VerifyEmailRequest request) {
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(() -> new AppException("Verification token is invalid"));
+        if (user.getEmailVerificationAttempts() >= MAX_OTP_ATTEMPTS) {
+            log.warn("Email verification locked after too many attempts for userId={}", user.getId());
+            throw new AppException("Too many verification attempts. Request a new code.");
+        }
         if (user.getEmailVerificationToken() == null
                 || user.getEmailVerificationTokenExpiresAt() == null
                 || user.getEmailVerificationTokenExpiresAt().isBefore(Instant.now())
                 || !passwordEncoder.matches(request.token(), user.getEmailVerificationToken())) {
+            user.setEmailVerificationAttempts(user.getEmailVerificationAttempts() + 1);
+            userRepository.save(user);
             throw new AppException("Verification token is invalid");
         }
         user.setEmailVerified(true);
         user.setEmailVerificationToken(null);
         user.setEmailVerificationTokenExpiresAt(null);
+        user.setEmailVerificationAttempts(0);
         userRepository.save(user);
         return "Email verified successfully";
     }
@@ -128,10 +142,18 @@ public class AuthService {
     @Transactional
     public String requestPasswordReset(PasswordResetRequest request) {
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
-                .orElseThrow(() -> new AppException("User not found"));
+                .orElseThrow(() -> new AppException("If the account exists, a password reset code will be sent."));
+        Instant now = Instant.now();
+        if (user.getPasswordResetRequestedAt() != null
+                && user.getPasswordResetRequestedAt().plus(RESET_REQUEST_COOLDOWN).isAfter(now)) {
+            log.warn("Password reset request throttled for userId={}", user.getId());
+            throw new AppException("If the account exists, a password reset code will be sent.");
+        }
         String resetToken = generateOtp();
         user.setPasswordResetToken(passwordEncoder.encode(resetToken));
-        user.setPasswordResetTokenExpiresAt(Instant.now().plus(Duration.ofMinutes(10)));
+        user.setPasswordResetTokenExpiresAt(now.plus(Duration.ofMinutes(10)));
+        user.setPasswordResetAttempts(0);
+        user.setPasswordResetRequestedAt(now);
         userRepository.save(user);
         emailService.sendPasswordResetOtp(user.getEmail(), resetToken);
         return "A password reset code was sent to your email.";
@@ -141,15 +163,23 @@ public class AuthService {
     public String resetPassword(ResetPasswordRequest request) {
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(() -> new AppException("Password reset token is invalid"));
+        if (user.getPasswordResetAttempts() >= MAX_OTP_ATTEMPTS) {
+            log.warn("Password reset locked after too many attempts for userId={}", user.getId());
+            throw new AppException("Too many password reset attempts. Request a new code.");
+        }
         if (user.getPasswordResetToken() == null
                 || user.getPasswordResetTokenExpiresAt() == null
                 || user.getPasswordResetTokenExpiresAt().isBefore(Instant.now())
                 || !passwordEncoder.matches(request.token(), user.getPasswordResetToken())) {
+            user.setPasswordResetAttempts(user.getPasswordResetAttempts() + 1);
+            userRepository.save(user);
             throw new AppException("Password reset token is invalid");
         }
         user.setPassword(passwordEncoder.encode(request.newPassword()));
         user.setPasswordResetToken(null);
         user.setPasswordResetTokenExpiresAt(null);
+        user.setPasswordResetAttempts(0);
+        user.setPasswordResetRequestedAt(null);
         userRepository.save(user);
         return "Password reset successful";
     }
