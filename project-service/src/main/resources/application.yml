@@ -1,0 +1,33 @@
+﻿server:
+  port: 8103
+
+spring:
+  application:
+    name: project-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5435/project_db}
+    username: ${DB_USERNAME:workora}
+    password: ${DB_PASSWORD:workora123}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    config-url: /project/v3/api-docs/swagger-config
+    url: /project/v3/api-docs

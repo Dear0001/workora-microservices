@@ -1,0 +1,146 @@
+services:
+  identity-db:
+    image: postgres:16-alpine
+    container_name: workora-identity-db
+    environment:
+      POSTGRES_DB: identity_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5433:5432"
+    volumes:
+      - identity-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d identity_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  organization-db:
+    image: postgres:16-alpine
+    container_name: workora-organization-db
+    environment:
+      POSTGRES_DB: organization_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5434:5432"
+    volumes:
+      - organization-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d organization_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  project-db:
+    image: postgres:16-alpine
+    container_name: workora-project-db
+    environment:
+      POSTGRES_DB: project_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5435:5432"
+    volumes:
+      - project-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d project_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  work-db:
+    image: postgres:16-alpine
+    container_name: workora-work-db
+    environment:
+      POSTGRES_DB: task_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5436:5432"
+    volumes:
+      - work-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d task_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bug-db:
+    image: postgres:16-alpine
+    container_name: workora-bug-db
+    environment:
+      POSTGRES_DB: bug_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5437:5432"
+    volumes:
+      - bug-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d bug_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  recruitment-db:
+    image: postgres:16-alpine
+    container_name: workora-recruitment-db
+    environment:
+      POSTGRES_DB: recruitment_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5438:5432"
+    volumes:
+      - recruitment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d recruitment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  notification-db:
+    image: postgres:16-alpine
+    container_name: workora-notification-db
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5439:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d notification_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payment-db:
+    image: postgres:16-alpine
+    container_name: workora-payment-db
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: workora
+      POSTGRES_PASSWORD: workora123
+    ports:
+      - "5440:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workora -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  identity-db-data:
+  organization-db-data:
+  project-db-data:
+  work-db-data:
+  bug-db-data:
+  recruitment-db-data:
+  notification-db-data:
+  payment-db-data:
