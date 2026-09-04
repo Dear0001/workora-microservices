@@ -141,13 +141,16 @@ public class AuthService {
 
     @Transactional
     public String requestPasswordReset(PasswordResetRequest request) {
-        User user = userRepository.findByEmail(normalizeEmail(request.email()))
-                .orElseThrow(() -> new AppException("If the account exists, a password reset code will be sent."));
+        String genericResponse = "If the account exists, a password reset code will be sent.";
+        User user = userRepository.findByEmail(normalizeEmail(request.email())).orElse(null);
+        if (user == null) {
+            return genericResponse;
+        }
         Instant now = Instant.now();
         if (user.getPasswordResetRequestedAt() != null
                 && user.getPasswordResetRequestedAt().plus(RESET_REQUEST_COOLDOWN).isAfter(now)) {
             log.warn("Password reset request throttled for userId={}", user.getId());
-            throw new AppException("If the account exists, a password reset code will be sent.");
+            return genericResponse;
         }
         String resetToken = generateOtp();
         user.setPasswordResetToken(passwordEncoder.encode(resetToken));
@@ -156,7 +159,7 @@ public class AuthService {
         user.setPasswordResetRequestedAt(now);
         userRepository.save(user);
         emailService.sendPasswordResetOtp(user.getEmail(), resetToken);
-        return "A password reset code was sent to your email.";
+        return genericResponse;
     }
 
     @Transactional

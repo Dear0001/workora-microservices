@@ -122,7 +122,8 @@ These are important findings to verify before production:
 4. Password reset: AUTH-018 through AUTH-022.
 5. Authorization/profile: AUTH-023 through AUTH-027.
 6. Fraud/security scanning checklist.
-7. Retest all failed P0/P1 cases and record evidence (request, response,
+7. Keycloak issuer, token, realm, and role validation.
+8. Retest all failed P0/P1 cases and record evidence (request, response,
    timestamp, account, environment, and defect ID).
 
 ## Verification performed
@@ -136,8 +137,197 @@ The following checks were run after the security changes:
 | Gateway Identity Swagger UI | Passed (HTTP 200) |
 | Gateway Identity OpenAPI document | Passed (HTTP 200) |
 | Anonymous `GET /api/identity/api/v1/users/me` | Passed security boundary (HTTP 401) |
+| Unknown password-reset email response | Fixed in code; requires live endpoint test |
+| OTP attempt limit and reset cooldown | Implemented in code; requires live functional test |
 
 The full endpoint table still requires functional execution with test
 accounts, real OTP delivery, and valid Keycloak tokens. Downstream Swagger
 URLs return connection errors when their corresponding services are not
 running.
+
+## Test evidence record
+
+Create one record for every executed case:
+
+| Field | Value |
+| --- | --- |
+| Test case ID | `AUTH-___` |
+| Date/time and timezone | |
+| Environment/build/commit | |
+| Base URL | |
+| Test account identifier | Use a test identifier only |
+| Request method/path | |
+| Request body/headers | Redact password, OTP, and tokens |
+| Expected result | |
+| Actual status/response | Redact secrets |
+| Mail/database/log evidence | |
+| Result | Pass / Fail / Blocked |
+| Defect ID and retest link | |
+
+Do not store live OTPs, access tokens, refresh tokens, Gmail passwords, or
+Keycloak administrator credentials in the evidence record.
+
+## Manual test procedures
+
+Run these procedures from PowerShell after starting the infrastructure and
+applications with `.\start-all.ps1`. Use only test accounts and a test mailbox.
+
+### 1. Health and Swagger
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/identity/api/health
+Invoke-WebRequest http://localhost:8080/gateway/swagger-ui.html -UseBasicParsing
+Invoke-WebRequest http://localhost:8080/identify/swagger-ui.html -UseBasicParsing
+```
+
+Expected: health returns HTTP 200 and both Swagger pages load.
+
+### 2. Registration and email verification
+
+```powershell
+$register = @{
+  email = "testuser@example.com"
+  password = "TestPassword123!"
+  firstName = "Test"
+  lastName = "User"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/register" `
+  -Method Post -ContentType "application/json" -Body $register
+```
+
+Confirm that the verification email arrives and that the response contains no
+password or OTP. Copy the six-digit OTP only into the next request:
+
+```powershell
+$verify = @{ email = "testuser@example.com"; token = "123456" } | ConvertTo-Json
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/verify-email" `
+  -Method Post -ContentType "application/json" -Body $verify
+```
+
+Replace `123456` with the value from the test mailbox. Test a wrong OTP, a
+replayed OTP, an expired OTP, another email address, and six-digit guesses
+until the five-attempt limit is reached. Record the resulting status and
+response, but never save the OTP in evidence.
+
+### 3. Login, refresh, and logout
+
+```powershell
+$loginBody = @{
+  email = "testuser@example.com"
+  password = "TestPassword123!"
+} | ConvertTo-Json
+
+$login = Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/login" `
+  -Method Post -ContentType "application/json" -Body $loginBody
+
+$accessToken = $login.data.accessToken
+$refreshToken = $login.data.refreshToken
+```
+
+Test correct credentials, a wrong password, an unknown email, and an
+unverified user. Do not print `$accessToken` or `$refreshToken`.
+
+```powershell
+$refreshBody = @{ refreshToken = $refreshToken } | ConvertTo-Json
+$rotated = Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/refresh" `
+  -Method Post -ContentType "application/json" -Body $refreshBody
+
+$logoutBody = @{ refreshToken = $rotated.data.refreshToken } | ConvertTo-Json
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/logout" `
+  -Method Post -ContentType "application/json" -Body $logoutBody
+```
+
+Verify that the original refresh token is rejected after rotation and the
+latest refresh token is rejected after logout.
+
+### 4. Password reset
+
+```powershell
+$resetRequest = @{ email = "testuser@example.com" } | ConvertTo-Json
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/password-reset-requests" `
+  -Method Post -ContentType "application/json" -Body $resetRequest
+```
+
+Confirm that the reset email arrives. Request a reset for an unknown email and
+compare the response; both responses must be generic. Repeat a known-email
+request within one minute and confirm throttling without account disclosure.
+
+Use the mailbox OTP to reset the password:
+
+```powershell
+$reset = @{
+  email = "testuser@example.com"
+  token = "123456"
+  newPassword = "NewPassword123!"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/auth/password-resets" `
+  -Method Post -ContentType "application/json" -Body $reset
+```
+
+Verify that the old password fails, the new password works, the OTP cannot be
+replayed, and five incorrect OTP attempts are blocked.
+
+### 5. Keycloak protected profile
+
+These values come from different places:
+
+- `client_id`: fixed value `workora-api`, imported from
+  `keycloak/realm-export.json`.
+- `grant_type`: fixed value `password` for this local test flow.
+- `username`: the username you create for a test user in the Keycloak
+  `workora` realm.
+- `password`: the password assigned to that Keycloak test user.
+
+Create the test user:
+
+1. Open `http://localhost:8180/admin/master/console/`.
+2. Sign in with the local administrator `admin` / `admin`.
+3. Select the `workora` realm from the realm menu.
+4. Open **Users** and select **Create new user**.
+5. Set a username such as `keycloak-test-user`, then save.
+6. Open the user's **Credentials** tab, choose **Set password**, enter a
+   temporary password, and turn **Temporary** off.
+7. Ensure the user is enabled and has a verified email if required.
+
+Use the username and password you created in the token request. Do not print
+the response because it contains an access token:
+
+```powershell
+$keycloak = Invoke-RestMethod `
+  -Uri "http://localhost:8180/realms/workora/protocol/openid-connect/token" `
+  -Method Post -ContentType "application/x-www-form-urlencoded" `
+  -Body @{
+    client_id = "workora-api"
+    grant_type = "password"
+    username = "the-username-you-created"
+    password = "the-password-you-created"
+  }
+
+$authHeaders = @{ Authorization = "Bearer $($keycloak.access_token)" }
+```
+
+Test the profile endpoints:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/users/me" `
+  -Headers $authHeaders
+
+$profile = @{ firstName = "Updated"; lastName = "Tester" } | ConvertTo-Json
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/users/me" `
+  -Method Patch -Headers $authHeaders `
+  -ContentType "application/json" -Body $profile
+```
+
+Verify that no token returns HTTP 401, a valid token returns HTTP 200, and
+expired, altered, wrong-realm, or wrong-issuer tokens return HTTP 401.

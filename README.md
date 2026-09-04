@@ -61,6 +61,17 @@ cd Workora-Microservices
 mvn test
 ```
 
+To start Docker infrastructure and all Spring Boot applications on Windows,
+run:
+
+```powershell
+.\start-all.ps1
+```
+
+The script opens one PowerShell window per service and starts the API Gateway
+last. Update the Java path at the top of `start-all.ps1` if your Java
+installation is elsewhere.
+
 ## Start infrastructure with Docker
 
 The [docker-compose.yml](./docker-compose.yml) file starts Keycloak and one
@@ -114,6 +125,12 @@ The local realm is `workora`, imported from
 public client is `workora-api`. Local administrator credentials are
 `admin` / `admin`; change them before sharing or deploying this environment.
 
+For local API testing, `workora-api` is the client ID. Create your own test
+username and password in the `workora` realm under **Users**; they are not
+predefined by the realm export. In the user's **Credentials** tab, set a
+password and turn off **Temporary** before requesting a token with the
+password grant.
+
 Open the administration console at:
 
 ```text
@@ -165,6 +182,74 @@ Send the returned access token to protected APIs as:
 ```http
 Authorization: Bearer <access-token>
 ```
+
+With PowerShell, create the authorization header explicitly after obtaining a
+Keycloak token:
+
+```powershell
+$authHeaders = @{
+  Authorization = "Bearer $($keycloak.access_token)"
+}
+```
+
+Use `$authHeaders` on protected requests. `Invoke-RestMethod` does not send a
+token automatically just because it is stored in `$keycloak`.
+
+## Authentication manual TC reference
+
+Use the gateway base URL:
+
+```text
+http://localhost:8080/api/identity
+```
+
+Never record real passwords, OTPs, access tokens, or refresh tokens. Replace
+them with placeholders in test evidence.
+
+| TC | Request | Expected result |
+| --- | --- | --- |
+| AUTH-001 Register | `POST /api/v1/auth/register` with email, password, first name, and last name | HTTP 200, verification email arrives, no password/OTP in response |
+| AUTH-002 Verify email | `POST /api/v1/auth/verify-email` with email and `<otp-from-mailbox>` | HTTP 200; wrong, expired, replayed, or malformed OTP is rejected |
+| AUTH-003 Login | `POST /api/v1/auth/login` with verified test credentials | HTTP 200 with access/refresh tokens; no password returned |
+| AUTH-004 Refresh | `POST /api/v1/auth/refresh` with `<current-refresh-token>` | HTTP 200 with rotated tokens; old token is rejected |
+| AUTH-005 Logout | `POST /api/v1/auth/logout` with `<current-refresh-token>` | HTTP 200; token cannot be refreshed afterward |
+| AUTH-006 Password reset request | `POST /api/v1/auth/password-reset-requests` with email | Generic HTTP 200 response for known and unknown emails; cooldown applies |
+| AUTH-007 Password reset | `POST /api/v1/auth/password-resets` with email, OTP, and new password | HTTP 200; old password and reused OTP fail |
+| AUTH-008 Protected profile | `GET /api/v1/users/me` with `Authorization: Bearer <keycloak-access-token>` | HTTP 200 for valid Keycloak token; HTTP 401 without/invalid token |
+| AUTH-009 Profile update | `PATCH /api/v1/users/me` with bearer token and names | HTTP 200; only authenticated user's profile changes |
+| AUTH-010 Health/routing | `GET /api/health` | HTTP 200 through gateway; Swagger loads |
+
+Example registration request:
+
+```json
+{
+  "email": "testuser@example.com",
+  "password": "<test-password>",
+  "firstName": "Test",
+  "lastName": "User"
+}
+```
+
+Example verification request:
+
+```json
+{
+  "email": "testuser@example.com",
+  "token": "<otp-from-test-mailbox>"
+}
+```
+
+Example protected profile request:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/identity/api/v1/users/me" `
+  -Headers $authHeaders `
+  -Method Get
+```
+
+If this returns HTTP 401, confirm that `$authHeaders` was created from
+`$keycloak.access_token`, not from the legacy Identity `/auth/login` token.
 
 The identity service validates Keycloak-issued JWTs using the
 `KEYCLOAK_ISSUER_URI` setting. Keycloak is used for API token validation;
