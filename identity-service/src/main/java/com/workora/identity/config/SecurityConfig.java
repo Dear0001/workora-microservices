@@ -22,7 +22,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +33,9 @@ public class SecurityConfig {
 
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+    private String jwkSetUri;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -105,10 +107,11 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        JwtDecoder decoder = JwtDecoders.fromIssuerLocation(issuerUri);
+        org.springframework.security.oauth2.jwt.NimbusJwtDecoder decoder =
+                org.springframework.security.oauth2.jwt.NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
         OAuth2TokenValidator<org.springframework.security.oauth2.jwt.Jwt> issuerValidator =
                 JwtValidators.createDefaultWithIssuer(issuerUri);
-        ((org.springframework.security.oauth2.jwt.NimbusJwtDecoder) decoder).setJwtValidator(issuerValidator);
+        decoder.setJwtValidator(issuerValidator);
         return decoder;
     }
 }

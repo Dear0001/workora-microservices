@@ -68,6 +68,25 @@ all_services_running() {
   return 0
 }
 
+wait_for_service() {
+  local service="$1"
+  local port="$2"
+
+  for attempt in {1..60}; do
+    if curl --fail --silent --max-time 3 \
+      "http://localhost:${port}/actuator/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Service $service did not become healthy. Container status:" >&2
+  docker compose --project-name "$COMPOSE_PROJECT" ps "$service" >&2 || true
+  echo "Recent logs for $service:" >&2
+  docker compose --project-name "$COMPOSE_PROJECT" logs --tail=80 "$service" >&2 || true
+  return 1
+}
+
 if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
   echo "Creating Docker network $NETWORK_NAME..."
   docker network create "$NETWORK_NAME" >/dev/null
@@ -120,24 +139,28 @@ docker compose --project-name "$COMPOSE_PROJECT" up -d --no-build --no-deps \
 for service in "${BACKEND_SERVICES[@]}"; do
   port="${SERVICE_PORTS[$service]}"
   echo "Waiting for $service on port $port..."
-  for attempt in {1..60}; do
-    if curl --fail --silent --show-error \
-      --max-time 3 \
-      "http://localhost:${port}/actuator/health" \
-      >/dev/null; then
-      break
-    fi
+  if wait_for_service "$service" "$port"; then
+    continue
+  fi
 
-    if [[ "$attempt" -eq 60 ]]; then
-      echo "ERROR: $service did not become healthy within 120 seconds." >&2
-      exit 1
-    fi
-    sleep 2
-  done
+  echo "Retrying $service with Docker Compose..."
+  docker compose --project-name "$COMPOSE_PROJECT" up -d --no-build --no-deps "$service"
+  if ! wait_for_service "$service" "$port"; then
+    echo "ERROR: $service failed to start after retry." >&2
+    exit 1
+  fi
 done
 
 echo "Starting API gateway..."
 docker compose --project-name "$COMPOSE_PROJECT" up -d --no-build --no-deps api-gateway
+if ! wait_for_service api-gateway 8080; then
+  echo "Retrying api-gateway with Docker Compose..."
+  docker compose --project-name "$COMPOSE_PROJECT" up -d --no-build --no-deps api-gateway
+  if ! wait_for_service api-gateway 8080; then
+    echo "ERROR: api-gateway failed to start after retry." >&2
+    exit 1
+  fi
+fi
 
 echo "All application containers are starting."
 echo "Swagger: http://localhost:8080/gateway/swagger-ui.html"

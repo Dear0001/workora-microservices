@@ -77,7 +77,7 @@ On Linux or macOS, start the project in three steps:
 
 ```bash
 cd Workora-Microservices
-chmod +x start-all-db.sh start-keycloak.sh start-all-service.sh
+chmod +x start-all-db.sh start-keycloak.sh start-all-service.sh remove-all-service.sh remove-all-workora.sh
 ./start-all-db.sh
 ./start-keycloak.sh
 ./start-all-service.sh
@@ -89,6 +89,12 @@ checks the application containers and source fingerprint before starting.
 It rebuilds the application images only when a tracked source or build file
 has changed, or when the saved state is missing.
 
+After starting each service, the script checks its Actuator health endpoint.
+If a service is not ready after two minutes, it prints the container status and
+recent logs, runs Docker Compose for that service again, and retries once.
+If it still fails, the script exits with the service logs so the startup error
+is visible.
+
 To automatically detect changes under `src/`, Maven files, the Dockerfile, or
 the Compose file and rebuild/restart the application containers:
 
@@ -98,6 +104,24 @@ the Compose file and rebuild/restart the application containers:
 
 The watcher uses polling and checks for changes every two seconds. Press
 `Ctrl+C` to stop it.
+
+To remove only the application service containers and images, run:
+
+```bash
+./remove-all-service.sh
+```
+
+The database containers, Keycloak, shared Docker network, and their data are not
+removed.
+
+To completely reset the Workora Docker Compose project, including all
+containers, images, volumes, networks, and orphan containers, run:
+
+```bash
+./remove-all-workora.sh
+```
+
+This permanently deletes the database volumes.
 
 ## Start infrastructure with Docker
 

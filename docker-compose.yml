@@ -158,12 +158,13 @@ services:
     restart: unless-stopped
     environment:
       DB_URL: jdbc:postgresql://identity-db:5432/identity_db
-      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/workora
+      KEYCLOAK_ISSUER_URI: http://localhost:8180/realms/workora
       KEYCLOAK_BASE_URL: http://keycloak:8080
       KEYCLOAK_REALM: workora
       KEYCLOAK_CLIENT_ID: workora-api
       KEYCLOAK_ADMIN_USERNAME: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/workora/protocol/openid-connect/certs
     ports:
       - "8101:8101"
     depends_on:
