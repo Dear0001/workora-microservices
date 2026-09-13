@@ -2,6 +2,20 @@
 
 This document translates the backend plan into a concrete REST endpoint blueprint. The design follows the architecture described in Workora-Backend-Development-Plan.md and the Spring Boot best-practice guidance in SKILL-BACKEND.md.
 
+## Implementation status (verified 2026-09-13)
+
+This is a target contract map, not an inventory of live controllers. The
+currently implemented routes are limited to:
+
+| Service | Implemented routes |
+| --- | --- |
+| Identity | `GET /api/health`; the seven `/api/v1/auth/*` compatibility routes; `GET` and `PATCH /api/v1/users/me` |
+| API Gateway | Routing and Swagger aggregation for Identity, Organization, Project, Work, Bug, Recruitment, Notification, and Payment |
+| Organization, Project, Work, Bug, Recruitment, Notification, Payment | `GET /api/health` only |
+
+No endpoint listed in the target sections below should be treated as available
+unless it appears in the service's controller source and README.
+
 ## 1. Shared conventions
 
 - API version prefix: `/api/v1`
@@ -13,7 +27,7 @@ This document translates the backend plan into a concrete REST endpoint blueprin
 - Require `Authorization: Bearer <token>` on protected resources
 - Use `X-Correlation-ID` across requests and downstream calls
 
-## 2. Gateway routing
+## 2. Gateway routing (implemented routes)
 
 The API gateway exposes public routes and forwards to the owning microservice.
 
@@ -341,5 +355,4 @@ service-name/
 - The API gateway validates tokens and routes requests; domain services enforce resource ownership.
 - Audit state transitions for all lifecycle changes: create, archive, approve, reject, assign, status change, verify, close.
 - MinIO is used for all file/object storage; services store metadata and object keys only.
-
 

@@ -4,6 +4,12 @@
 spring:
   application:
     name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/workora}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/realms/workora/protocol/openid-connect/certs}
   cloud:
     gateway:
       routes:
@@ -184,3 +190,10 @@ springdoc:
         url: /payment/v3/api-docs
   api-docs:
     path: /gateway/v3/api-docs
+
+gateway:
+  cors:
+    allowed-origins: ${GATEWAY_CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  rate-limit:
+    requests-per-window: ${GATEWAY_RATE_LIMIT_REQUESTS:120}
+    window-seconds: ${GATEWAY_RATE_LIMIT_WINDOW_SECONDS:60}

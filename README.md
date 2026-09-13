@@ -2,14 +2,36 @@
 
 This project is a Spring Boot microservice skeleton built from the Workora backend plan and the Spring Boot best-practice guidance in SKILL-BACKEND.md.
 
+## Implementation status (verified 2026-09-13)
+
+The repository currently contains:
+
+- A working API Gateway with routes for all eight backend services, Keycloak JWT
+  validation, CORS, correlation IDs, in-memory rate limiting, consistent JSON
+  401/403 responses, and Swagger aggregation routes.
+- A partially implemented Identity Service with Keycloak-backed registration,
+  login, refresh, logout, password-reset action requests, email-verification
+  action responses, current-user profile reads, and first/last-name updates.
+- A UUID-backed `users` table, BCrypt password hashing, JWT resource-server
+  validation, global exception handling, validation DTOs, and Actuator health
+  endpoints.
+- Health endpoints only in Organization, Project, Work, Bug, Recruitment,
+  Notification, and Payment services. Their domain APIs, repositories, entities,
+  and business workflows are not implemented yet.
+- Docker Compose PostgreSQL containers for each data-owning service and a
+  Keycloak realm import for local development.
+
+The feature inventory and endpoint sections below describe the target platform;
+they are not claims that those APIs already exist. See each service README for
+its verified implementation status.
+
 ## Database ownership rule
 
 Each service owns its own database/schema and must keep data isolated from other services:
 
 | Service | Database/schema |
 | --- | --- |
-| auth-service | auth_db |
-| user-service | user_db |
+| identity-service | identity_db |
 | organization-service | organization_db |
 | project-service | project_db |
 | work-service | task_db |
@@ -35,8 +57,9 @@ Each service owns its own database/schema and must keep data isolated from other
 
 ## Service map
 
-- api-gateway: routing, authentication validation, CORS, rate limiting, correlation ID propagation
-- identity-service: Keycloak registration/login, email verification, password reset, token sessions, and user profiles
+- api-gateway: routing, Keycloak JWT validation, CORS, in-memory rate limiting,
+  correlation IDs, JSON authentication errors, and Swagger aggregation
+- identity-service: Keycloak registration/login, email-action verification, password reset, token sessions, and user profiles
 - user-service: profile, experience, avatar, personal settings, account status
 - organization-service: companies, memberships, departments, roles, invitations
 - project-service: projects, phases, public/private visibility, Bug-Fix Jobs
@@ -48,7 +71,7 @@ Each service owns its own database/schema and must keep data isolated from other
 
 ## Detailed endpoint design
 
-See [API-ENDPOINTS.md](identity-service/API-ENDPOINTS.md) for the deep endpoint-by-endpoint contract map derived from the backend development plan.
+See [API-ENDPOINTS.md](identity-service/API-ENDPOINTS.md) for the target endpoint contract map and its implementation-status notes.
 
 See [AUTH-TEST-PLAN.md](identity-service/AUTH-TEST-PLAN.md) for the authentication test
 cases, execution order, fraud scanning checklist, and production security
@@ -61,17 +84,9 @@ cd Workora-Microservices
 mvn test
 ```
 
-To start Docker infrastructure and all Spring Boot applications on Windows,
-run:
-
-```powershell
-.\start-all.ps1
-```
-
-The script clean-builds every Maven module, rebuilds the application Docker
-images without cache, and recreates all infrastructure and application
-containers. Run it again after code changes to rebuild and restart everything.
-Set `JAVA_HOME` before running it if Java is not installed at the default path.
+The repository currently provides POSIX shell startup scripts. On Windows, use
+Docker Compose directly or run the scripts through WSL/Git Bash; there is no
+`start-all.ps1` in this repository.
 
 On Linux or macOS, start the project in three steps:
 
@@ -266,18 +281,20 @@ Use the gateway base URL:
 http://localhost:8080/api/identity
 ```
 
-Never record real passwords, OTPs, access tokens, or refresh tokens. Replace
-them with placeholders in test evidence.
+Never record real passwords, MFA codes, access tokens, or refresh tokens.
+Replace them with placeholders in test evidence. Email verification and
+password reset use Keycloak action links; Workora does not issue a second OTP
+for either flow.
 
 | TC | Request | Expected result |
 | --- | --- | --- |
-| AUTH-001 Register | `POST /api/v1/auth/register` with email, password, first name, and last name | HTTP 200, verification email arrives, no password/OTP in response |
-| AUTH-002 Verify email | `POST /api/v1/auth/verify-email` with email and `<otp-from-mailbox>` | HTTP 200; wrong, expired, replayed, or malformed OTP is rejected |
-| AUTH-003 Login | `POST /api/v1/auth/login` with verified test credentials | HTTP 200 with access/refresh tokens; no password returned |
-| AUTH-004 Refresh | `POST /api/v1/auth/refresh` with `<current-refresh-token>` | HTTP 200 with rotated tokens; old token is rejected |
-| AUTH-005 Logout | `POST /api/v1/auth/logout` with `<current-refresh-token>` | HTTP 200; token cannot be refreshed afterward |
-| AUTH-006 Password reset request | `POST /api/v1/auth/password-reset-requests` with email | Generic HTTP 200 response for known and unknown emails; cooldown applies |
-| AUTH-007 Password reset | `POST /api/v1/auth/password-resets` with email, OTP, and new password | HTTP 200; old password and reused OTP fail |
+| AUTH-001 Register | `POST /api/v1/auth/register` with email, password, first name, and last name | Keycloak user and local profile are created; no password is returned |
+| AUTH-002 Verify email | `POST /api/v1/auth/verify-email` | Compatibility response explains that Keycloak completes verification by email link |
+| AUTH-003 Login | `POST /api/v1/auth/login` with Keycloak credentials | HTTP 200 with Keycloak access/refresh tokens and local profile |
+| AUTH-004 Refresh | `POST /api/v1/auth/refresh` with a Keycloak refresh token | HTTP 200 with the refreshed Keycloak token response |
+| AUTH-005 Logout | `POST /api/v1/auth/logout` with a Keycloak refresh token | Keycloak logout succeeds and the token is revoked |
+| AUTH-006 Password reset request | `POST /api/v1/auth/password-reset-requests` with email | Keycloak `UPDATE_PASSWORD` email action is requested |
+| AUTH-007 Password reset | `POST /api/v1/auth/password-resets` | Compatibility response explains that Keycloak completes the reset link |
 | AUTH-008 Protected profile | `GET /api/v1/users/me` with `Authorization: Bearer <keycloak-access-token>` | HTTP 200 for valid Keycloak token; HTTP 401 without/invalid token |
 | AUTH-009 Profile update | `PATCH /api/v1/users/me` with bearer token and names | HTTP 200; only authenticated user's profile changes |
 | AUTH-010 Health/routing | `GET /api/health` | HTTP 200 through gateway; Swagger loads |
@@ -293,15 +310,6 @@ Example registration request:
 }
 ```
 
-Example verification request:
-
-```json
-{
-  "email": "testuser@example.com",
-  "token": "<otp-from-test-mailbox>"
-}
-```
-
 Example protected profile request:
 
 ```powershell
@@ -311,19 +319,19 @@ Invoke-RestMethod `
   -Method Get
 ```
 
-If this returns HTTP 401, confirm that `$authHeaders` was created from
-`$keycloak.access_token`, not from the legacy Identity `/auth/login` token.
+If this returns HTTP 401, confirm that `$authHeaders` was created from a
+currently valid access token issued by the `workora` Keycloak realm.
 
-The identity service validates Keycloak-issued JWTs using the
-`KEYCLOAK_ISSUER_URI` setting. Keycloak is used for API token validation;
-legacy custom identity endpoints remain available while clients migrate.
+The identity service validates Keycloak-issued JWTs using the configured issuer
+and JWK set. The compatibility auth endpoints delegate credential and action
+flows to Keycloak.
 
 ## Identity implementation status
 
-The current Identity Service implements local registration, BCrypt password
-storage, email and password-reset OTPs, custom login/refresh/logout, profile
-read/update, and Keycloak JWT validation. Keycloak is the recommended
-production token issuer. Keycloak's token, revocation, discovery, and JWKS
+The current Identity Service implements Keycloak-backed registration,
+login/refresh/logout, verification and password-reset action requests, local
+profile synchronization, profile read/update, BCrypt local password storage,
+and Keycloak JWT validation. Keycloak's token, revocation, discovery, and JWKS
 endpoints are used directly; the Identity Service does not reimplement those
 OAuth endpoints.
 
@@ -345,22 +353,19 @@ mvn spring-boot:run -pl identity-service
 The datasource settings support `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`
 environment variables for deployment-specific connection values.
 
-### Gmail OTP email configuration
+### Keycloak email configuration
 
-The identity service sends verification and password-reset OTPs through Gmail
-SMTP. Set a Google app password in the same PowerShell window used to start
-the service:
+Keycloak sends verification and password-reset action emails through its realm
+SMTP configuration. Configure SMTP in the Keycloak administration console and
+provide its credentials as deployment secrets. Do not add a duplicate Workora
+OTP flow; reserve OTP for a future, separately documented MFA or high-risk
+action requirement.
 
 ```powershell
-$env:MAIL_USERNAME="your-gmail-address@gmail.com"
-$env:MAIL_PASSWORD="your-16-character-app-password"
-mvn spring-boot:run -pl identity-service
+docker compose logs -f keycloak
 ```
 
-Do not use the normal Gmail password or commit the app password. If
-`MAIL_PASSWORD` is not set, Spring's mail health check reports
-`AuthenticationFailedException: no password specified`, and OTP emails cannot
-be sent.
+Do not commit SMTP credentials. Email delivery is delegated to Keycloak.
 
 ## Swagger UI
 
