@@ -21,11 +21,19 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
+    private String issuerUri;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -61,6 +69,7 @@ public class SecurityConfig {
         authoritiesConverter.setAuthoritiesClaimName("roles");
         JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
         jwtConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        jwtConverter.setPrincipalClaimName("email");
 
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -92,5 +101,14 @@ public class SecurityConfig {
                 }));
 
         return http.build();
+    }
+
+    @Bean
+    public JwtDecoder jwtDecoder() {
+        JwtDecoder decoder = JwtDecoders.fromIssuerLocation(issuerUri);
+        OAuth2TokenValidator<org.springframework.security.oauth2.jwt.Jwt> issuerValidator =
+                JwtValidators.createDefaultWithIssuer(issuerUri);
+        ((org.springframework.security.oauth2.jwt.NimbusJwtDecoder) decoder).setJwtValidator(issuerValidator);
+        return decoder;
     }
 }

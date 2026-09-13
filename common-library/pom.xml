@@ -11,4 +11,8 @@
   <artifactId>common-library</artifactId>
   <name>common-library</name>
   <packaging>jar</packaging>
+
+  <properties>
+    <spring-boot.repackage.skip>true</spring-boot.repackage.skip>
+  </properties>
 </project>

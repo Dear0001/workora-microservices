@@ -1,8 +1,23 @@
 {
   "realm": "workora",
   "enabled": true,
+  "attributes": {
+    "frontendUrl": "http://localhost:8180"
+  },
   "registrationAllowed": true,
   "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "USER",
+        "description": "Standard Workora user"
+      },
+      {
+        "name": "ADMIN",
+        "description": "Workora administrator"
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "workora-api",

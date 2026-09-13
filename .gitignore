@@ -25,3 +25,4 @@ secrets/
 # Local runtime output
 *.pid
 *.tmp
+.workora-service-state

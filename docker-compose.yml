@@ -149,6 +149,158 @@ services:
       timeout: 5s
       retries: 10
 
+  identity-service:
+    build:
+      context: .
+      args:
+        SERVICE: identity-service
+    container_name: identity-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://identity-db:5432/identity_db
+      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/workora
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: workora
+      KEYCLOAK_CLIENT_ID: workora-api
+      KEYCLOAK_ADMIN_USERNAME: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8101:8101"
+    depends_on:
+      identity-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  organization-service:
+    build:
+      context: .
+      args:
+        SERVICE: organization-service
+    container_name: organization-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://organization-db:5432/organization_db
+    ports:
+      - "8102:8102"
+    depends_on:
+      organization-db:
+        condition: service_healthy
+
+  project-service:
+    build:
+      context: .
+      args:
+        SERVICE: project-service
+    container_name: project-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://project-db:5432/project_db
+    ports:
+      - "8103:8103"
+    depends_on:
+      project-db:
+        condition: service_healthy
+
+  work-service:
+    build:
+      context: .
+      args:
+        SERVICE: work-service
+    container_name: work-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://work-db:5432/task_db
+    ports:
+      - "8104:8104"
+    depends_on:
+      work-db:
+        condition: service_healthy
+
+  bug-service:
+    build:
+      context: .
+      args:
+        SERVICE: bug-service
+    container_name: bug-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://bug-db:5432/bug_db
+    ports:
+      - "8105:8105"
+    depends_on:
+      bug-db:
+        condition: service_healthy
+
+  recruitment-service:
+    build:
+      context: .
+      args:
+        SERVICE: recruitment-service
+    container_name: recruitment-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://recruitment-db:5432/recruitment_db
+    ports:
+      - "8106:8106"
+    depends_on:
+      recruitment-db:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      args:
+        SERVICE: notification-service
+    container_name: notification-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://notification-db:5432/notification_db
+    ports:
+      - "8107:8107"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: .
+      args:
+        SERVICE: payment-service
+    container_name: payment-service
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://payment-db:5432/payment_db
+    ports:
+      - "8108:8108"
+    depends_on:
+      payment-db:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      args:
+        SERVICE: api-gateway
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - identity-service
+      - organization-service
+      - project-service
+      - work-service
+      - bug-service
+      - recruitment-service
+      - notification-service
+      - payment-service
+
+networks:
+  default:
+    name: workora-microservices_default
+    external: true
+
 volumes:
   identity-db-data:
   organization-db-data:

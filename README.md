@@ -36,7 +36,7 @@ Each service owns its own database/schema and must keep data isolated from other
 ## Service map
 
 - api-gateway: routing, authentication validation, CORS, rate limiting, correlation ID propagation
-- auth-service: OAuth/OIDC, registration, email verification, password reset, refresh sessions
+- identity-service: Keycloak registration/login, email verification, password reset, token sessions, and user profiles
 - user-service: profile, experience, avatar, personal settings, account status
 - organization-service: companies, memberships, departments, roles, invitations
 - project-service: projects, phases, public/private visibility, Bug-Fix Jobs
@@ -48,9 +48,9 @@ Each service owns its own database/schema and must keep data isolated from other
 
 ## Detailed endpoint design
 
-See [API-ENDPOINTS.md](./API-ENDPOINTS.md) for the deep endpoint-by-endpoint contract map derived from the backend development plan.
+See [API-ENDPOINTS.md](identity-service/API-ENDPOINTS.md) for the deep endpoint-by-endpoint contract map derived from the backend development plan.
 
-See [AUTH-TEST-PLAN.md](./AUTH-TEST-PLAN.md) for the authentication test
+See [AUTH-TEST-PLAN.md](identity-service/AUTH-TEST-PLAN.md) for the authentication test
 cases, execution order, fraud scanning checklist, and production security
 notices.
 
@@ -68,14 +68,55 @@ run:
 .\start-all.ps1
 ```
 
-The script opens one PowerShell window per service and starts the API Gateway
-last. Update the Java path at the top of `start-all.ps1` if your Java
-installation is elsewhere.
+The script clean-builds every Maven module, rebuilds the application Docker
+images without cache, and recreates all infrastructure and application
+containers. Run it again after code changes to rebuild and restart everything.
+Set `JAVA_HOME` before running it if Java is not installed at the default path.
+
+On Linux or macOS, start the project in three steps:
+
+```bash
+cd Workora-Microservices
+chmod +x start-all-db.sh start-keycloak.sh start-all-service.sh
+./start-all-db.sh
+./start-keycloak.sh
+./start-all-service.sh
+```
+
+The scripts can be run again safely. `start-all-db.sh` starts the PostgreSQL
+containers, `start-keycloak.sh` starts Keycloak, and `start-all-service.sh`
+checks the application containers and source fingerprint before starting.
+It rebuilds the application images only when a tracked source or build file
+has changed, or when the saved state is missing.
+
+To automatically detect changes under `src/`, Maven files, the Dockerfile, or
+the Compose file and rebuild/restart the application containers:
+
+```bash
+./start-all-service.sh --watch
+```
+
+The watcher uses polling and checks for changes every two seconds. Press
+`Ctrl+C` to stop it.
 
 ## Start infrastructure with Docker
 
-The [docker-compose.yml](./docker-compose.yml) file starts Keycloak and one
-PostgreSQL container with a persistent volume for each database-owning service:
+The [docker-compose.yml](./docker-compose.yml) file defines Keycloak, one
+PostgreSQL container per database-owning service, and all Spring Boot
+application containers. The startup scripts above start these groups separately.
+
+The startup scripts use the Compose project name
+`workora-microservices-2` and the shared Docker network
+`workora-microservices_default`.
+
+Alternatively, to start the same groups directly with Compose, use:
+
+```bash
+docker compose --project-name workora-microservices-2 up -d identity-db organization-db project-db work-db bug-db recruitment-db notification-db payment-db
+docker compose --project-name workora-microservices-2 up -d keycloak
+docker compose --project-name workora-microservices-2 build
+docker compose --project-name workora-microservices-2 up -d
+```
 
 ```bash
 cd Workora-Microservices
@@ -114,7 +155,7 @@ staging or production. Replace the `POSTGRES_PASSWORD` values in
 their original credentials; changing the Compose file alone does not change
 an already-initialized database password.
 
-Keycloak is available at:
+Keycloak is the identity provider and is available at:
 
 ```text
 http://localhost:8180
@@ -125,11 +166,9 @@ The local realm is `workora`, imported from
 public client is `workora-api`. Local administrator credentials are
 `admin` / `admin`; change them before sharing or deploying this environment.
 
-For local API testing, `workora-api` is the client ID. Create your own test
-username and password in the `workora` realm under **Users**; they are not
-predefined by the realm export. In the user's **Credentials** tab, set a
-password and turn off **Temporary** before requesting a token with the
-password grant.
+The compatibility endpoints under `identity-service` delegate registration,
+login, refresh, logout, and password-reset email actions to Keycloak. The
+service stores only the local Workora profile and application data.
 
 Open the administration console at:
 
@@ -255,6 +294,21 @@ The identity service validates Keycloak-issued JWTs using the
 `KEYCLOAK_ISSUER_URI` setting. Keycloak is used for API token validation;
 legacy custom identity endpoints remain available while clients migrate.
 
+## Identity implementation status
+
+The current Identity Service implements local registration, BCrypt password
+storage, email and password-reset OTPs, custom login/refresh/logout, profile
+read/update, and Keycloak JWT validation. Keycloak is the recommended
+production token issuer. Keycloak's token, revocation, discovery, and JWKS
+endpoints are used directly; the Identity Service does not reimplement those
+OAuth endpoints.
+
+Google federation, RabbitMQ identity events, complete profile attributes
+(gender, date of birth, avatar, bio, and experience), account
+disable/delete workflows, gateway rate limiting, refresh-token family
+revocation, and production TLS/observability remain roadmap items. They are
+not represented as implemented features.
+
 The databases are exposed on host ports `5433` through `5440`; inside the
 Compose network each database listens on its normal PostgreSQL port `5432`.
 Each Spring Boot service is configured to use its matching database by
@@ -303,6 +357,11 @@ Open Swagger through the gateway using this single format:
 Use the gateway URLs above as the single Swagger access format. The individual
 service ports are for service traffic and are not the documented Swagger entry
 points.
+
+For Identity protected endpoints, click the **Authorize** lock button in
+Swagger, paste only the Keycloak access token, and select **Authorize**.
+Swagger will automatically send `Authorization: Bearer <token>`. Do not paste
+the `Bearer ` prefix if the dialog already supplies it.
 
 ## Identity authentication
 

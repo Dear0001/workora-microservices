@@ -1,24 +1,21 @@
 # Identity Service
 
-The identity service owns Workora user accounts, credentials, email
-verification, JWT sessions, password reset tokens, roles, and the current
-user profile.
+The identity service owns the Workora profile and application data. Keycloak
+owns credentials, registration, login, email verification, password reset,
+refresh tokens, logout, and identity roles.
 
 ## Responsibilities
 
-- Register a user with a unique, normalized email address.
-- Hash passwords with BCrypt before persistence.
-- Require email verification before login.
-- Issue short-lived access tokens and longer-lived refresh tokens.
-- Validate refresh tokens and rotate them on refresh.
-- Invalidate the stored refresh-token hash during logout.
+- Delegate registration, login, refresh, logout, and password reset actions to
+  Keycloak.
+- Synchronize the authenticated Keycloak user into the local profile database.
 - Provide the authenticated user's profile.
 - Allow authenticated users to update their first and last names.
 - Expose health checks for local development and service monitoring.
 
 ## Running
 
-For local Keycloak authentication, start Keycloak from the repository root:
+Start Keycloak from the repository root:
 
 ```bash
 docker compose up -d keycloak
@@ -34,7 +31,12 @@ POST http://localhost:8180/realms/workora/protocol/openid-connect/token
 
 Use the returned access token as `Authorization: Bearer <token>` when calling
 protected APIs through the gateway. The identity service validates the token
-issuer configured by `KEYCLOAK_ISSUER_URI`.
+issuer and JWKS signature configured by `KEYCLOAK_ISSUER_URI`.
+
+The existing `/api/v1/auth/*` endpoints are compatibility endpoints backed by
+Keycloak. Registration and password-reset requests send Keycloak action emails;
+configure SMTP for the `workora` realm in the Keycloak administration console
+before using those flows.
 
 Start the identity database from the repository root:
 
@@ -260,6 +262,10 @@ The JPA entity `User` is stored in the `users` table with:
 The service implements `UserDetails`. Its username is the email address, its
 authority is `ROLE_<role>`, and an account is enabled only after email
 verification.
+
+For Keycloak JWTs, the authenticated username is read from the token's
+`email` claim rather than the UUID in `sub`. Tokens must use the configured
+Workora issuer and `azp=workora-api`.
 
 ## Security
 

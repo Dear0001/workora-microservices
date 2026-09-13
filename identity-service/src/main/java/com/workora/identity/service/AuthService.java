@@ -8,32 +8,29 @@ import com.workora.identity.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
-import java.time.Duration;
-import java.time.Instant;
-import java.security.SecureRandom;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class AuthService {
 
-    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
-    private static final int MAX_OTP_ATTEMPTS = 5;
-    private static final Duration RESET_REQUEST_COOLDOWN = Duration.ofMinutes(1);
-
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final EmailService emailService;
-    private final SecureRandom secureRandom = new SecureRandom();
+    private final KeycloakService keycloakService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService, EmailService emailService) {
+    public AuthService(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            KeycloakService keycloakService
+    ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-        this.emailService = emailService;
+        this.keycloakService = keycloakService;
     }
 
     @Transactional
@@ -43,176 +40,127 @@ public class AuthService {
             throw new AppException("Email already registered");
         }
 
-        User user = new User(email, passwordEncoder.encode(request.password()), request.firstName(), request.lastName(), Role.USER);
-        String verificationToken = generateOtp();
-        user.setEmailVerificationToken(passwordEncoder.encode(verificationToken));
-        user.setEmailVerificationTokenExpiresAt(Instant.now().plus(Duration.ofMinutes(10)));
-        user.setEmailVerificationAttempts(0);
-        user.setEmailVerified(false);
+        keycloakService.register(request);
+        User user = new User(
+                email,
+                passwordEncoder.encode(UUID.randomUUID().toString()),
+                request.firstName(),
+                request.lastName(),
+                Role.USER
+        );
         userRepository.save(user);
-        emailService.sendVerificationOtp(user.getEmail(), verificationToken);
 
         return Map.of(
                 "userId", user.getId().toString(),
                 "email", user.getEmail(),
-                "message", "Registration successful. A verification code was sent to your email."
+                "message", "Registration successful. Keycloak sent a verification email."
         );
     }
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(normalizeEmail(request.email()))
-                .orElseThrow(() -> new AppException("Invalid credentials"));
-
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new AppException("Invalid credentials");
-        }
-
-        if (!user.isEmailVerified()) {
-            throw new AppException("Email not verified");
-        }
-
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
-        user.setRefreshTokenHash(passwordEncoder.encode(refreshToken));
+        String email = normalizeEmail(request.email());
+        Map<String, Object> tokens = keycloakService.login(new LoginRequest(email, request.password()));
+        User user = profileFor(email);
+        user.setEmailVerified(true);
         userRepository.save(user);
-
-        return new AuthResponse(accessToken, refreshToken, user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(), user.getRole().name());
+        return authResponse(tokens, user);
     }
 
     @Transactional
     public AuthResponse refresh(RefreshTokenRequest request) {
-        String refreshToken = request.refreshToken();
-        String email = jwtService.extractUsername(refreshToken);
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException("Invalid refresh token"));
-
-        if (!jwtService.isValidToken(refreshToken, "refresh") || !passwordEncoder.matches(refreshToken, user.getRefreshTokenHash())) {
-            throw new AppException("Refresh token is invalid or expired");
-        }
-
-        String newAccessToken = jwtService.generateAccessToken(user);
-        String newRefreshToken = jwtService.generateRefreshToken(user);
-        user.setRefreshTokenHash(passwordEncoder.encode(newRefreshToken));
-        userRepository.save(user);
-
-        return new AuthResponse(newAccessToken, newRefreshToken, user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(), user.getRole().name());
+        Map<String, Object> tokens = keycloakService.refresh(request);
+        String email = emailFromToken(tokens);
+        return authResponse(tokens, profileFor(email));
     }
 
-    @Transactional
     public String verifyEmail(VerifyEmailRequest request) {
-        User user = userRepository.findByEmail(normalizeEmail(request.email()))
-                .orElseThrow(() -> new AppException("Verification token is invalid"));
-        if (user.getEmailVerificationAttempts() >= MAX_OTP_ATTEMPTS) {
-            log.warn("Email verification locked after too many attempts for userId={}", user.getId());
-            throw new AppException("Too many verification attempts. Request a new code.");
-        }
-        if (user.getEmailVerificationToken() == null
-                || user.getEmailVerificationTokenExpiresAt() == null
-                || user.getEmailVerificationTokenExpiresAt().isBefore(Instant.now())
-                || !passwordEncoder.matches(request.token(), user.getEmailVerificationToken())) {
-            user.setEmailVerificationAttempts(user.getEmailVerificationAttempts() + 1);
-            userRepository.save(user);
-            throw new AppException("Verification token is invalid");
-        }
-        user.setEmailVerified(true);
-        user.setEmailVerificationToken(null);
-        user.setEmailVerificationTokenExpiresAt(null);
-        user.setEmailVerificationAttempts(0);
-        userRepository.save(user);
-        return "Email verified successfully";
+        throw new AppException("Keycloak uses a verification link. Check your email to complete verification.");
     }
 
-    @Transactional
     public String logout(LogoutRequest request) {
-        String refreshToken = request.refreshToken();
-        String email = jwtService.extractUsername(refreshToken);
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException("Invalid refresh token"));
-
-        if (!jwtService.isValidToken(refreshToken, "refresh")) {
-            throw new AppException("Refresh token is invalid or expired");
-        }
-
-        user.setRefreshTokenHash(null);
-        userRepository.save(user);
+        keycloakService.logout(request.refreshToken());
         return "Logged out successfully";
     }
 
-    @Transactional
     public String requestPasswordReset(PasswordResetRequest request) {
-        String genericResponse = "If the account exists, a password reset code will be sent.";
-        User user = userRepository.findByEmail(normalizeEmail(request.email())).orElse(null);
-        if (user == null) {
-            return genericResponse;
-        }
-        Instant now = Instant.now();
-        if (user.getPasswordResetRequestedAt() != null
-                && user.getPasswordResetRequestedAt().plus(RESET_REQUEST_COOLDOWN).isAfter(now)) {
-            log.warn("Password reset request throttled for userId={}", user.getId());
-            return genericResponse;
-        }
-        String resetToken = generateOtp();
-        user.setPasswordResetToken(passwordEncoder.encode(resetToken));
-        user.setPasswordResetTokenExpiresAt(now.plus(Duration.ofMinutes(10)));
-        user.setPasswordResetAttempts(0);
-        user.setPasswordResetRequestedAt(now);
-        userRepository.save(user);
-        emailService.sendPasswordResetOtp(user.getEmail(), resetToken);
-        return genericResponse;
+        keycloakService.requestPasswordReset(normalizeEmail(request.email()));
+        return "A password reset email will be sent if the account exists.";
     }
 
-    @Transactional
     public String resetPassword(ResetPasswordRequest request) {
-        User user = userRepository.findByEmail(normalizeEmail(request.email()))
-                .orElseThrow(() -> new AppException("Password reset token is invalid"));
-        if (user.getPasswordResetAttempts() >= MAX_OTP_ATTEMPTS) {
-            log.warn("Password reset locked after too many attempts for userId={}", user.getId());
-            throw new AppException("Too many password reset attempts. Request a new code.");
+        throw new AppException("Password reset is completed through the Keycloak email link.");
+    }
+
+    private User profileFor(String email) {
+        return userRepository.findByEmail(email).orElseGet(() -> userRepository.save(new User(
+                email,
+                passwordEncoder.encode(UUID.randomUUID().toString()),
+                "",
+                "",
+                Role.USER
+        )));
+    }
+
+    private AuthResponse authResponse(Map<String, Object> tokens, User user) {
+        String accessToken = (String) tokens.get("access_token");
+        String refreshToken = (String) tokens.get("refresh_token");
+        if (accessToken == null || refreshToken == null) {
+            throw new AppException("Keycloak did not return a complete token response");
         }
-        if (user.getPasswordResetToken() == null
-                || user.getPasswordResetTokenExpiresAt() == null
-                || user.getPasswordResetTokenExpiresAt().isBefore(Instant.now())
-                || !passwordEncoder.matches(request.token(), user.getPasswordResetToken())) {
-            user.setPasswordResetAttempts(user.getPasswordResetAttempts() + 1);
-            userRepository.save(user);
-            throw new AppException("Password reset token is invalid");
+        return new AuthResponse(
+                accessToken,
+                refreshToken,
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getRole().name()
+        );
+    }
+
+    private String emailFromToken(Map<String, Object> tokens) {
+        String accessToken = (String) tokens.get("access_token");
+        if (accessToken == null) {
+            throw new AppException("Keycloak did not return an access token");
         }
-        user.setPassword(passwordEncoder.encode(request.newPassword()));
-        user.setPasswordResetToken(null);
-        user.setPasswordResetTokenExpiresAt(null);
-        user.setPasswordResetAttempts(0);
-        user.setPasswordResetRequestedAt(null);
-        userRepository.save(user);
-        return "Password reset successful";
+        String[] parts = accessToken.split("\\.");
+        if (parts.length != 3) {
+            throw new AppException("Keycloak returned an invalid access token");
+        }
+        String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        Matcher matcher = Pattern.compile("\"email\"\\s*:\\s*\"([^\"]+)\"").matcher(payload);
+        if (!matcher.find()) {
+            throw new AppException("Keycloak token does not contain an email claim");
+        }
+        return normalizeEmail(matcher.group(1));
     }
 
     @Transactional(readOnly = true)
     public UserProfileResponse getCurrentProfile(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException("User not found"));
-        return new UserProfileResponse(user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(), user.getRole().name(), user.isEmailVerified());
+        User user = userRepository.findByEmail(normalizeEmail(email))
+                .orElseThrow(() -> new AppException("User profile not found"));
+        return new UserProfileResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getRole().name(),
+                user.isEmailVerified()
+        );
     }
 
     @Transactional
     public UserProfileResponse updateCurrentProfile(String email, String firstName, String lastName) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException("User not found"));
-        if (firstName != null) {
-            user.setFirstName(firstName);
-        }
-        if (lastName != null) {
-            user.setLastName(lastName);
-        }
+        User user = userRepository.findByEmail(normalizeEmail(email))
+                .orElseThrow(() -> new AppException("User profile not found"));
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
         userRepository.save(user);
         return getCurrentProfile(email);
     }
 
     private String normalizeEmail(String email) {
         return email == null ? null : email.trim().toLowerCase();
-    }
-
-    private String generateOtp() {
-        return String.format("%06d", secureRandom.nextInt(1_000_000));
     }
 }
